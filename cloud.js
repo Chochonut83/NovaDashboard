@@ -120,6 +120,8 @@ function showSignIn(msg) {
     catch (e) {
       if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/operation-not-supported-in-this-environment') return signInWithRedirect(auth, provider);
       if (e?.code === 'auth/popup-closed-by-user' || e?.code === 'auth/cancelled-popup-request') return;
+      if (e?.code === 'auth/auth-domain-config-required') return showSignIn('This phone is still using old Firebase settings. Close the app, wait a minute and open it again (or clear this site’s data in Chrome).');
+      if (e?.code === 'auth/operation-not-allowed') return showSignIn('Google sign-in isn’t turned on yet. In Firebase, go to Authentication → Sign-in method → Google → Enable.');
       if (e?.code === 'auth/unauthorized-domain') return showSignIn('This web address isn’t allowed to sign in yet. In Firebase, go to Authentication → Settings → Authorized domains and add ' + location.hostname + '.');
       showSignIn('Sign-in didn’t work (' + (e?.code || 'error') + '). Check your connection and try again.');
     }

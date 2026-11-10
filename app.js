@@ -30,6 +30,7 @@ const initials=s=>String(s).trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join
 const prod=id=>S.products.find(p=>p.id===id);
 const photoOf=p=>p?(S.photos[p.id]||(window.NOVA_PHOTOS||{})[p.id]||null):null;
 const label=p=>p?(p.name+(p.strength?' '+p.strength:'')):'Unknown item';
+const lineName=i=>(!i.name||i.name==='Unknown item')&&prod(i.productId)?label(prod(i.productId)):(i.name||'Unknown item');
 const capColor=p=>CAPS[p?.cap]||p?.cap||'var(--teal)';
 const CAT_ORDER={peptide:0,bac:1,other:2};
 const CAT_LABEL={peptide:'Peptide',bac:'BAC water',other:'Non-peptide item'};
@@ -143,12 +144,12 @@ function vPurchases(){
 }
 function cardPurchase(p){
   const items=p.items||[],units=sum(items,i=>i.units);
-  const names=items.map(i=>i.name).slice(0,3).join(', ')+(items.length>3?` +${items.length-3} more`:'');
+  const names=items.map(lineName).slice(0,3).join(', ')+(items.length>3?` +${items.length-3} more`:'');
   return `<details class="card"><summary>
     <div class="sum-main"><b>${esc(fmtDate(p.date))}${p.supplier?' · '+esc(p.supplier):''}</b><small>${esc(names)||'Shipping only'}</small></div>
     <div class="sum-amt">${cad(p.totalCAD)}<small>${units} units</small></div>${chev}</summary>
     <div class="detail"><div class="lines">
-    ${items.map(i=>`<div class="line"><div>${esc(i.name)}<small>${i.mode==='kit'?`${i.qty} kit${i.qty==1?'':'s'} · ${i.units} vials`:`${i.qty} single${i.qty==1?'':'s'}`} @ ${cur(num(i.unitCost),i.currency)}${i.mode==='kit'?'/kit':''}</small></div><div class="money">${cad(i.lineCAD)}<small style="text-align:right">${cad(num(i.landedCAD)/(num(i.units)||1))}/unit landed</small></div></div>`).join('')}
+    ${items.map(i=>`<div class="line"><div>${esc(lineName(i))}<small>${i.mode==='kit'?`${i.qty} kit${i.qty==1?'':'s'} · ${i.units} vials`:`${i.qty} single${i.qty==1?'':'s'}`} @ ${cur(num(i.unitCost),i.currency)}${i.mode==='kit'?'/kit':''}</small></div><div class="money">${cad(i.lineCAD)}<small style="text-align:right">${cad(num(i.landedCAD)/(num(i.units)||1))}/unit landed</small></div></div>`).join('')}
     ${num(p.shipping)?`<div class="line"><div>Shipping<small>${cur(num(p.shipping),p.shippingCurrency)}</small></div><div class="money">${cad(p.shippingCAD)}</div></div>`:''}
     </div>
     <div class="sub"><label>Date <input class="dateedit" type="date" data-editdate="purchases" data-id="${esc(p.id)}" value="${esc(p.date)}"></label></div>
@@ -467,14 +468,14 @@ function pfTotals(c,usesUSD){return `<div class="line"><span>Items</span><b clas
   <div class="line"><span>Shipping</span><b class="money">${cad(c.shipCAD)}</b></div>
   <div class="line grand"><span>Total (CAD)</span><span class="money">${cad(c.total)}</span></div>${usesUSD?`<div class="note">USD converted at ${num(PF.fx).toFixed(4)}</div>`:''}`}
 function updatePF(){const c=calcPF();c.lines.forEach((cl,i)=>{const el=document.querySelector(`[data-calc="${i}"]`);if(el)el.innerHTML=calcText(cl,prod(cl.pid))});$('#pf-totals').innerHTML=pfTotals(c,PF.lines.some(l=>l.cur==='USD')||PF.shipCur==='USD')}
-function buildPurchase({date,supplier,note,fx,lines,ship,shipCur}){
+function buildPurchase({date,supplier,note,fx,lines,ship,shipCur,look}){
   // lines: [{pid,mode,cur,qty,cost,units?,lineCAD?,landedCAD?}]
   const L=lines.map(l=>{const q=num(l.qty),c=num(l.cost);const units=l.units!=null&&l.units!==''?num(l.units):Math.round(q*(l.mode==='kit'?KIT:1)*1000)/1000;
     const lineCAD=l.lineCAD!=null&&l.lineCAD!==''?num(l.lineCAD):q*c*(l.cur==='USD'?num(fx):1);return{...l,q,c,units,lineCAD}});
   const shipCAD=num(ship.cad!=null&&ship.cad!==''?ship.cad:num(ship.amt)*(shipCur==='USD'?num(fx):1));
   const items=sum(L,l=>l.lineCAD);
   return{date:date||today(),supplier:supplier||'',note:note||'',fxRate:num(fx),
-    items:L.map(l=>{const p=prod(l.pid);const landed=l.landedCAD!=null&&l.landedCAD!==''?num(l.landedCAD):l.lineCAD+(items?shipCAD*l.lineCAD/items:(L.length?shipCAD/L.length:0));
+    items:L.map(l=>{const p=(look&&look(l.pid))||prod(l.pid);const landed=l.landedCAD!=null&&l.landedCAD!==''?num(l.landedCAD):l.lineCAD+(items?shipCAD*l.lineCAD/items:(L.length?shipCAD/L.length:0));
       return{productId:l.pid,name:label(p),category:p?.category||'peptide',mode:l.mode,currency:l.cur,qty:l.q,unitCost:r2(l.c),units:l.units,lineCAD:r2(l.lineCAD),landedCAD:r2(landed)}}),
     shipping:r2(num(ship.amt)),shippingCurrency:shipCur,shippingCAD:r2(shipCAD),itemsCAD:r2(items),totalCAD:r2(items+shipCAD),createdAt:Date.now()};
 }
@@ -786,7 +787,7 @@ function workbook(){
   const F=finance();
   const purchRows=[];
   [...S.purchases].sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(p=>{const items=p.items?.length?p.items:[{}];items.forEach((i,ix)=>{const first=ix===0;
-    purchRows.push([p.id,p.date,first?p.supplier||'':'',i.productId||'',i.name||'',CAT_LABEL[prod(i.productId)?.category||i.category]||'',i.mode==='kit'?'Kit':(i.mode?'Single':''),num(i.qty),num(i.units),num(i.unitCost),i.currency||'',num(p.fxRate),num(i.lineCAD),num(i.landedCAD),i.units?r2(num(i.landedCAD)/num(i.units)):'',
+    purchRows.push([p.id,p.date,first?p.supplier||'':'',i.productId||'',lineName(i),CAT_LABEL[prod(i.productId)?.category||i.category]||'',i.mode==='kit'?'Kit':(i.mode?'Single':''),num(i.qty),num(i.units),num(i.unitCost),i.currency||'',num(p.fxRate),num(i.lineCAD),num(i.landedCAD),i.units?r2(num(i.landedCAD)/num(i.units)):'',
       first?num(p.shipping):'',first?p.shippingCurrency||'':'',first?num(p.shippingCAD):'',first?num(p.totalCAD):'',first?p.note||'':''])})});
   const saleRows=[];
   [...S.sales].sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(s=>(s.items||[]).forEach((i,ix)=>{const first=ix===0;
@@ -860,7 +861,7 @@ function parseWorkbook(sheets){
         units:isNum(pick(o,'Units'))?num(pick(o,'Units')):null,lineCAD:isNum(pick(o,'Line cost CAD'))?num(pick(o,'Line cost CAD')):null,landedCAD:isNum(pick(o,'Landed cost CAD'))?num(pick(o,'Landed cost CAD')):null})});
     if(bad)return prob('Purchases',f._row,`Order ${k.startsWith('row')?'':k+' '}skipped because of the problem(s) above`);
     const shipCur=String(pick(f,'Shipping currency')||'USD').toUpperCase().includes('CAD')?'CAD':'USD';
-    const doc=buildPurchase({date,supplier:String(pick(f,'Supplier')),note:String(pick(f,'Note')),fx,lines,ship:{amt:pick(f,'Shipping'),cad:isNum(pick(f,'Shipping CAD'))?num(pick(f,'Shipping CAD')):null},shipCur});
+    const doc=buildPurchase({look:id=>known.get(id),date,supplier:String(pick(f,'Supplier')),note:String(pick(f,'Note')),fx,lines,ship:{amt:pick(f,'Shipping'),cad:isNum(pick(f,'Shipping CAD'))?num(pick(f,'Shipping CAD')):null},shipCur});
     out.purchases.push({id:k.startsWith('row')?uid():k,...doc})});
   // sales
   const sg=new Map();
